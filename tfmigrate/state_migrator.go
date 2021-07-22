@@ -14,6 +14,8 @@ type StateMigratorConfig struct {
 	// Dir is a working directory for executing terraform command.
 	// Default to `.` (current directory).
 	Dir string `hcl:"dir,optional"`
+
+	Workspace string `hcl:"workspace,optional"`
 	// Actions is a list of state action.
 	// action is a plain text for state operation.
 	// Valid formats are the following.
@@ -40,6 +42,11 @@ func (c *StateMigratorConfig) NewMigrator(o *MigratorOption) (Migrator, error) {
 		dir = c.Dir
 	}
 
+	workspace := "default"
+	if len(c.Workspace) > 0 {
+		workspace = c.Workspace
+	}
+
 	if len(c.Actions) == 0 {
 		return nil, fmt.Errorf("faild to NewMigrator with no actions")
 	}
@@ -54,7 +61,7 @@ func (c *StateMigratorConfig) NewMigrator(o *MigratorOption) (Migrator, error) {
 		actions = append(actions, action)
 	}
 
-	return NewStateMigrator(dir, actions, o, c.Force), nil
+	return NewStateMigrator(dir, workspace, actions, o, c.Force), nil
 }
 
 // StateMigrator implements the Migrator interface.
@@ -63,6 +70,8 @@ type StateMigrator struct {
 	tf tfexec.TerraformCLI
 	// actions is a list of state migration operations.
 	actions []StateAction
+
+	workspace string
 	// force operation in case of unexpected diff
 	force bool
 }
@@ -70,7 +79,7 @@ type StateMigrator struct {
 var _ Migrator = (*StateMigrator)(nil)
 
 // NewStateMigrator returns a new StateMigrator instance.
-func NewStateMigrator(dir string, actions []StateAction, o *MigratorOption, force bool) *StateMigrator {
+func NewStateMigrator(dir string, workspace string, actions []StateAction, o *MigratorOption, force bool) *StateMigrator {
 	e := tfexec.NewExecutor(dir, os.Environ())
 	tf := tfexec.NewTerraformCLI(e)
 	if o != nil && len(o.ExecPath) > 0 {
@@ -78,9 +87,10 @@ func NewStateMigrator(dir string, actions []StateAction, o *MigratorOption, forc
 	}
 
 	return &StateMigrator{
-		tf:      tf,
-		actions: actions,
-		force:   force,
+		tf:        tf,
+		actions:   actions,
+		workspace: workspace,
+		force:     force,
 	}
 }
 
@@ -90,7 +100,7 @@ func NewStateMigrator(dir string, actions []StateAction, o *MigratorOption, forc
 // the Migrator interface between a single and multi state migrator.
 func (m *StateMigrator) plan(ctx context.Context) (*tfexec.State, error) {
 	// setup work dir.
-	currentState, switchBackToRemotekFunc, err := setupWorkDir(ctx, m.tf, "default")
+	currentState, switchBackToRemotekFunc, err := setupWorkDir(ctx, m.tf, m.workspace)
 	if err != nil {
 		return nil, err
 	}
